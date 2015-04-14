@@ -1,0 +1,67 @@
+\documentclass[11pt,letterpaper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[margin=.5in]{geometry}
+\usepackage{graphicx}
+\usepackage{titling}
+\usepackage{amsmath}
+\usepackage{bm}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\setlength{\droptitle}{-6em}
+\author{Maurice Diesendruck, Sukyung Park, Bowei Yan, Michael Zhang}
+\title{SDS 386D Markov Chain Monte Carlo - HW 4 \\ Random Size Mixture of Normals}
+\begin{document}
+%\SweaveOpts{concordance=TRUE}
+\maketitle
+
+
+\section{Joint Posterior}
+Joint posterior distribution $p(\theta|x)$, where $\theta=(J,\pmb{w},\pmb{\mu},\sigma^2)$:
+
+\begin{align*}
+p(\theta|x) &\propto\ p(x|\theta)*p(\theta) \\
+	&= \prod_{i=i}^n p(x_i|\theta) p(J) p(\pmb{w}|J) p(\pmb{\mu}) p(\frac{1}
+		{\sigma^2})\\
+	&= \prod_{i=1}^n \Big( \sum_{j=1}^J w_j N(x_i|\mu_j,\sigma^2) \Big) 
+		\hspace{2mm} Poi^+(J|5) \hspace{2mm} Dir(\pmb{w}|J,1) \hspace{2mm}
+		N(\pmb{\mu}|0,1) \hspace{2mm} Ga(\frac{1}{\sigma^2}|5,0.05)\\
+	&\propto\ \Bigg( \prod_{i=1}^n \Big( \sum_{j=1}^J w_j exp(\frac{-(x_i-\mu_j)}
+		{2\sigma^2}) \Big) \Bigg) 
+		\Bigg( \frac{e^{-5}5^J}{J!} \Bigg) 
+		\Bigg( \prod_{j=1}^J w_j^{1-1} \Bigg) 
+		\Bigg( \prod_{j=1}^J exp\lbrace \frac{-\mu_j^2}{2} \rbrace \Bigg)
+		\Bigg( \Big( \dfrac{1}{\sigma^2} \Big)^{5-1}
+			e^{-0.05(\dfrac{1}{\sigma^2})} \Bigg)
+\end{align*}
+
+\section{Hierarchical Model}
+
+The model is "broken" into a hierarchical model, by introducing $s_i$, an
+	indicator of when the $w$ assignment is $w_j$.
+\begin{align*}
+p(x_i|s_i=j) &= N(\mu_j,\sigma^2)\\
+p(s_i=j|\pmb{w},J) &= w_j
+\end{align*}
+Such that the new joint posterior is
+\begin{align*}
+p(\pmb{w},\pmb{\mu},\sigma^2,s|x) \propto\ 
+	\prod_{i\in{A_j}} w_j N(x_i|\mu_j,\sigma^2) 
+	\hspace{2mm} \prod_{j} N(\mu_j|0,1) \hspace{2mm} Ga(\frac{1}{\sigma^2}|5,0.05)\\
+\end{align*}
+The following conditionals are found by identifying the parts of the joint
+	distribution that relate to each variable.
+
+\subsection{$p(\mu_j|\pmb{s},\pmb{w},\pmb{x})$}
+\begin{align*}
+p(\mu_j|\pmb{s},\pmb{w},\pmb{x}) &\propto\ p(x|\mu_j,\pmb{s},\pmb{w})p(\mu_j)
+&\propto\ \prod_{s_i=j} exp \Big( \dfrac{(s(x_i-\mu_j)^2}{2\sigma^2} \Big)
+\end{align*}
+
+
+
+\newpage
+\vspace{40mm}
+
+
+
+\end{document}

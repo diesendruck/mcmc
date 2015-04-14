@@ -1,0 +1,230 @@
+\documentclass[12pt,letterpaper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[margin=.7in]{geometry}
+\usepackage{graphicx}
+\usepackage{titling}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\renewcommand{\theenumiv}{\arabic{enumiv}}
+\setlength{\droptitle}{-5em}
+\author{Maurice Diesendruck}
+\title{MCMC Midterm 2: Attachments}
+\begin{document}
+\maketitle
+
+% Question 5 Plots
+\begin{center}
+\includegraphics[height=8cm, keepaspectratio]{origdatawithfits.png}\\
+\includegraphics[height=8cm, keepaspectratio]{expected-f.png}\\
+\includegraphics[height=8cm, keepaspectratio]{distribution-K.png}\\
+\includegraphics[height=8cm, keepaspectratio]{distribution-sig2.png}\\
+\includegraphics[height=8cm, keepaspectratio]{K-vs-iterations.png}\\
+\end{center}
+
+% Question 6 Plot
+<<echo=FALSE>>=
+Kmx <- 10               # max number of frequencies
+b0 <- rep(0,2*Kmx+1)    # p(beta|K) = N(b0, A0^-1)
+## (A0 precision matrix)
+A0 <- diag(0.1,2*Kmx+1)
+asig <- 1               # 1/sig2 ~ Ga(asig, bsig)
+bsig <- 1
+lambda <- 5
+
+## read data
+dta <- read.table("cepheid.dta",header=T,skip=15)
+o <- order(dta$phase)   # sort the data by phase - for easier printing
+dta <- dta[o,]
+n <- nrow(dta)
+x <- dta$phase
+y <- dta$velocity
+
+make.x <- function(xx,k=1) { 
+  ## make columns in the design matrix for
+  ## k-th harmonic
+  tm <- xx*(k*2*pi)
+  return(cbind(sin(tm),cos(tm)))
+}
+
+## create the design matrix X for up to Kmx trig polynomials
+##    use it by selecting the first (1+2K) columns for current K
+X <- rep(1,n)
+for(k in 1:Kmx) {
+  X <- cbind(X,make.x(x,k))
+}
+
+lpbeta <- function(b) { # evaluate log p(b)
+  idx  <- 1:length(b)
+  sd <- 1/sqrt(diag(A0)[idx])  # rely on A0 being diagonal!
+  ## and recall A0 is precision matrix
+  # lp <- sum(dnorm(b, m=b0[idx], sd=sd, log=TRUE))   # HIS VERSION
+  lp <- sum(dnorm(b, m=b0[idx], sd=sqrt(10), log=TRUE))
+  return(lp)
+}
+
+loglik <- function(K, b, sig2) { # evaluate log likelihood 
+  p <- length(b)
+  n <- length(y)
+  yhat <- X[,1:p] %*% b
+  lp <- sum(dnorm(y, m=yhat, sd=sqrt(sig2), log=TRUE))
+  return (lp)
+}
+
+lmarg <- function(K) { 
+  # evaluates marginal, as in candidate's formula -- spell it out!!
+  sig2 <- 0.5
+  ## (i) find the posterior moments
+  idx <- 1:(2*K+1)                  # select cols of design matrix 
+  XK <- X[,idx]                     #     under K
+  H <- t(XK) %*% XK
+  bhat <- solve(H) %*% t(XK) %*% y  # least squares estimate
+  Shatinv <- H/sig2                 #               inverse var
+  S <- solve( A0[idx,idx]+Shatinv ) # posterior var (9.4) in Hoff
+  bbar <- S %*% (1/sig2*t(XK)%*%y)  #          mean (9.5) in Hoff
+  ## (ii) evaluate the marginal, using the formula from 1f
+  lp <- 0.5*log(det(S)) +
+    loglik(K,bbar,sig2) + lpbeta(bbar)
+  return(lp)
+}
+
+klist <- 1:Kmx
+log.marginal <- rep(0,Kmx) # initialize
+layout(matrix(c(1,2,3,4,5,6,7,8,9), 3, 3, byrow = TRUE))
+for(k in klist) {
+  log.marginal[k] <- lmarg(k)  # Stores log marginal, given K
+  log.marginal <- log.marginal-max(log.marginal)  # Normalizing all log marginals
+  lpk <- log.marginal + dpois(klist,lambda,log=TRUE)  # Multiply by prior on K
+  pk <- exp(lpk)/(sum(exp(lpk)))  # Find percentage contribution of that K
+  if(k!=Kmx) barplot(pk, names=1:Kmx, xlab="K", ylab="p(y | K)", bty="l", ylim=c(0,1))
+}
+par(mfrow=c(1,1))
+barplot(pk, names=1:Kmx, xlab="K", ylab="p(y | K)", bty="l", ylim=c(0,1),
+        main="Cumulative Plot")
+@
+
+\section*{Relevant Code Snippets}
+
+\subsection{Log Joint Posterior for Ratio}
+<<echo=TRUE>>=
+ljointpost=function(K, b, sig2){
+  #print("calculating posterior with param:");
+  n = length(y);
+  p <- length(b)
+  yhat <- X[,1:p] %*% b
+  
+  # Posterior. Cancel out terms without K, yhat, b.
+  lpo  <- (-1/2)*(1/sig2)*sum((y-yhat)^2) - 1/2*sum(b^2)/10 + K*log(lambda) - 
+            log(factorial(K))
+  
+  return(lpo);
+}
+@
+
+\subsection{Gibbs Conditional Posterior Distributions}
+<<echo=TRUE>>=
+sample.b <- function(K,sig2) { # generate b ~ p(b | K, sig2, y)
+  idx <- 1:(2*K+1)   # select columns (elements) for K harmonics
+  Xk <- X[,idx]      # Subset of design matrix, with 2K+1 columns.
+  A0k <- A0[idx,idx] # Precision matrix of beta prior.
+  b0k <- b0[idx]     # Mean vector of zeros from beta prior.
+  
+  # Full conditionals from Question 2
+  V <- solve(t(Xk)%*%Xk/sig2+A0k)
+  mm <- V%*%(t(Xk)%*%y/sig2)
+  L <- t( chol(V))             # LL' = V
+  b <- mm + L %*% rnorm(2*K+1) # b ~ N(m,V)
+  
+  return (b)
+}
+
+sample.sig2 <- function(K,b) { # generate 1/sig2 ~ p(1/sig2 | K,b,y)
+  p <- length(b)
+  idx <- 1:(2*K+1)   # select columns (elements) for K harmonics
+  Xk <- X[,idx]      # Subset of design matrix, with 2K+1.
+  
+  a1 <- (n/2)+1
+  b1 <- t(y-Xk%*%b)%*%(y-Xk%*%b)/2 + 1
+  
+  sig2inv <- rgamma(1,shape=a1,rate=b1)
+  sig2 <- 1/sig2inv
+  return (sig2)
+}
+@
+
+\subsection{Auxiliary Variable Transformation and Reverse Transformation}
+<<echo=TRUE>>=
+qu <- function(K, b, sig2) { 
+  ## find m,L for mapping T: (b,u) -> b1,  below
+  ## bnew = m + L*u, 
+  ## Use a regression of residuals on (K+1)-st harmonic
+  ##     to determine m and L
+  idx <- 1:(2*K+1)   # select columns (elements) for K harmonics
+  Xk <- X[,idx]      # Subset of design matrix, with columns for setting of K.
+  eps <- y-Xk%*%b
+  
+  regression <- lm(eps ~ sin((K+1)*2*pi*x) + cos((K+1)*2*pi*x))
+  mk <- regression$coefficients[2:3]
+  Vk <- vcov(regression)[2:3,2:3]
+  Lk <- t(chol(Vk))
+  return (list(m=mk, V=Vk, L=Lk))
+}
+
+Tinv <- function(K1,b1,sig2) {
+  ## proposed (shorter) par vector
+  ## bnew = m + Lu or u = L^-1 (bnew-m)
+  K <- K1-1
+  p <- 2*K+1
+  b <- b1[1:p]  
+  bnew <- b1[c(p+1,p+2)]
+  
+  ## back out auxiliary u, and logJ
+  fit <- qu(K, b, sig2)
+  u <- solve(fit$L)%*%(bnew-fit$m)
+  logJ <- sum(log(diag(fit$L)))
+  
+  return (list(b=b, u=u, logJ=logJ))
+}
+@
+
+\subsection{Acceptance Probability for Birth Move}
+<<echo=TRUE>>=
+rho <- function(K, b1, b, u, logJ, sig2) { 
+  ##  acceptance ratio for birth move,
+  ##  moving from b -> (b,u)
+  # current parameter: b
+  # proposal:          b1
+  K1 <- K+1
+  
+  lqu <- sum(dnorm(u, m=0, sd=1, log=TRUE)) # TODO: Shouldn't this be dnorm?
+
+  ljointpostratio <- ljointpost(K1, b1, sig2) - ljointpost(K, b, sig2)
+  
+  # Priors and likelihood
+  rho <- exp(ljointpostratio)
+  
+  # Transition probabilities
+  if (K==1) {
+    rho <- rho*2
+  } else if (K==Kmx-1) {
+    rho <- rho/2
+  } else {
+    # Scaling rule smoothely penalizes larger values of K.
+    birth.weight <- qbeta((Kmx-K+0.01)/Kmx, 1, 5)
+    rho <- rho*birth.weight
+  }
+  rho <- rho/exp(lqu)         # Auxiliary
+  rho <- rho*exp(logJ)        # Jacobian
+
+  return (rho)
+}
+@
+
+
+\end{document}
+
+
+
+
+
+
